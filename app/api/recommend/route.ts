@@ -111,9 +111,18 @@ async function fetchFilteredMovies(
     q = q.not('exclude_tags', 'ov', `{${tagList}}`)
   }
 
-  const { data, error } = await q
-  if (error) throw error
-  return (data ?? []) as Movie[]
+  const BATCH = 1000
+  const all: Movie[] = []
+  let offset = 0
+  while (true) {
+    const { data, error } = await q.range(offset, offset + BATCH - 1)
+    if (error) throw error
+    const batch = (data ?? []) as Movie[]
+    all.push(...batch)
+    if (batch.length < BATCH) break
+    offset += BATCH
+  }
+  return all
 }
 
 function jsContentFilter(movies: Movie[], currentYear: number): Movie[] {

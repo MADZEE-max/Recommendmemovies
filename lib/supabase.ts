@@ -17,6 +17,7 @@ export type Movie = {
   tmdb_id: number
   title: string
   year: number | null
+  release_date: string | null
   poster_path: string | null
   rating: number | null
   vote_count: number | null
@@ -24,6 +25,7 @@ export type Movie = {
   original_language: string | null
   genres: string[]
   ai_tagged: boolean
+  family_safe: boolean | null
   mood_tags: string[]
   energy_tags: string[]
   world_tags: string[]

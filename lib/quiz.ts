@@ -89,7 +89,7 @@ export function mapAnswersToTags(answers: QuizAnswers): TagMapping {
     const q6Map: Record<string, string> = {
       'Show me popular hits': 'popular',
       'Hidden gems only': 'hidden-gems',
-      'Non-English films welcome': 'international',
+      'Non-English films': 'international',
       'No preference': 'none',
     }
     const tag = q6Map[answers.q6]
@@ -225,7 +225,7 @@ export const QUESTIONS = [
     options: [
       'Show me popular hits',
       'Hidden gems only',
-      'Non-English films welcome',
+      'Non-English films',
       'No preference',
     ],
     emojis: ['🔥', '💎', '🌐', '🎲'],

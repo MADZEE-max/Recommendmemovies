@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import ProgressBar from '@/components/ProgressBar'
 import QuizButton from '@/components/QuizButton'
+import FeedbackButton from '@/components/FeedbackButton'
 import { QUESTIONS, QuizAnswers } from '@/lib/quiz'
 import { Movie, Availability } from '@/lib/supabase'
 
@@ -14,6 +15,47 @@ type MovieWithMeta = Movie & {
 type Screen = 'start' | 'quiz' | 'loading' | 'results'
 
 const TMDB_IMG = 'https://image.tmdb.org/t/p/w500'
+const SEEN_STORAGE_KEY = 'seen_movies'
+
+function getSeenMovieIds(): number[] {
+  try {
+    const stored = localStorage.getItem(SEEN_STORAGE_KEY)
+    return stored ? (JSON.parse(stored) as number[]) : []
+  } catch {
+    return []
+  }
+}
+
+function addSeenMovieIds(ids: number[]) {
+  try {
+    const existing = getSeenMovieIds()
+    const merged = Array.from(new Set([...existing, ...ids]))
+    localStorage.setItem(SEEN_STORAGE_KEY, JSON.stringify(merged))
+  } catch {
+    // ignore storage errors
+  }
+}
+
+function clearSeenMovieIds() {
+  try {
+    localStorage.removeItem(SEEN_STORAGE_KEY)
+  } catch {
+    // ignore
+  }
+}
+
+const SESSION_ID_KEY = 'rmm_session_id'
+function getOrCreateSessionId(): string {
+  try {
+    const existing = localStorage.getItem(SESSION_ID_KEY)
+    if (existing) return existing
+    const id = crypto.randomUUID()
+    localStorage.setItem(SESSION_ID_KEY, id)
+    return id
+  } catch {
+    return crypto.randomUUID()
+  }
+}
 
 const MOOD_ACCENT: Record<string, string> = {
   funny: '#EAB308',
@@ -36,6 +78,17 @@ const PLATFORM_COLORS: Record<string, string> = {
   Tubi: 'bg-orange-700',
   Crunchyroll: 'bg-orange-600',
 }
+
+const GROUP_VIBE_LABELS: Record<string, string> = {
+  'Make me laugh': 'Make us laugh',
+  'Keep me on edge': 'Keep us on edge',
+  'Make me feel something': 'Make us feel something',
+  'Blow my mind': 'Blow our minds',
+  'Scare me': 'Scare us',
+  'Inspire me': 'Inspire us',
+}
+
+const GROUP_CONTEXTS = new Set(['Date night', 'Friends over', 'Family time'])
 
 function platformColor(name: string) {
   return PLATFORM_COLORS[name] ?? 'bg-gray-700'
@@ -66,7 +119,23 @@ function LoadingSpinner() {
   )
 }
 
-function MovieCard({ movie, index }: { movie: MovieWithMeta; index: number }) {
+function MovieCard({
+  movie,
+  index,
+  onSwap,
+  isSwapping,
+  isFadingIn,
+  reaction,
+  onReact,
+}: {
+  movie: MovieWithMeta
+  index: number
+  onSwap?: () => void
+  isSwapping?: boolean
+  isFadingIn?: boolean
+  reaction?: 'like' | 'dislike' | null
+  onReact?: (r: 'like' | 'dislike') => void
+}) {
   const poster = movie.poster_path ? `${TMDB_IMG}${movie.poster_path}` : null
   const accentColor = getMoodAccent(movie)
   const flatrate = (movie.availability ?? []).filter(
@@ -79,7 +148,7 @@ function MovieCard({ movie, index }: { movie: MovieWithMeta; index: number }) {
   const labels = ['Top Pick', 'Great Match', 'Also Consider']
 
   return (
-    <div className="flex bg-gray-900/80 border border-gray-800 rounded-2xl overflow-hidden hover:border-gray-600 transition-all duration-300">
+    <div className={`relative flex bg-gray-900/80 border border-gray-800 rounded-2xl overflow-hidden hover:border-gray-600 transition-all duration-300${isFadingIn ? ' movie-swap-in' : ''}`}>
       {/* Mood accent line */}
       <div
         className="w-1 flex-shrink-0"
@@ -115,7 +184,7 @@ function MovieCard({ movie, index }: { movie: MovieWithMeta; index: number }) {
 
       {/* Info */}
       <div className="flex-1 py-4 px-4 min-w-0 flex flex-col gap-2">
-        <h3 className="font-extrabold text-white text-lg leading-tight">
+        <h3 className="font-extrabold text-white text-lg leading-tight pr-14">
           {movie.title}
         </h3>
 
@@ -171,7 +240,51 @@ function MovieCard({ movie, index }: { movie: MovieWithMeta; index: number }) {
         {flatrate.length === 0 && rent.length === 0 && (
           <p className="text-xs text-gray-700">No streaming info available</p>
         )}
+
+        {/* Reaction buttons */}
+        {onReact && (
+          <div className="flex items-center gap-2 mt-auto pt-2">
+            <button
+              onClick={() => onReact('like')}
+              aria-label="Like"
+              className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded-full border transition-all ${
+                reaction === 'like'
+                  ? 'bg-green-500/20 border-green-500 text-green-400'
+                  : 'border-gray-700 text-gray-600 hover:border-gray-500 hover:text-gray-400'
+              }`}
+            >
+              <span>👍</span>
+            </button>
+            <button
+              onClick={() => onReact('dislike')}
+              aria-label="Dislike"
+              className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded-full border transition-all ${
+                reaction === 'dislike'
+                  ? 'bg-red-500/20 border-red-500 text-red-400'
+                  : 'border-gray-700 text-gray-600 hover:border-gray-500 hover:text-gray-400'
+              }`}
+            >
+              <span>👎</span>
+            </button>
+          </div>
+        )}
       </div>
+
+      {/* Swap button */}
+      {onSwap && (
+        <button
+          onClick={onSwap}
+          disabled={isSwapping}
+          className="absolute top-2 right-2 z-10 text-xs text-gray-400 hover:text-white bg-gray-800/90 hover:bg-gray-700 px-2 py-1 rounded-lg transition-all flex items-center gap-1 disabled:opacity-40"
+        >
+          {isSwapping ? (
+            <span className="inline-block w-3 h-3 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
+          ) : (
+            '🔄'
+          )}
+          <span>Swap</span>
+        </button>
+      )}
     </div>
   )
 }
@@ -194,11 +307,42 @@ export default function Home() {
   const [questionIndex, setQuestionIndex] = useState(0)
   const [answers, setAnswers] = useState<QuizAnswers>({})
   const [movies, setMovies] = useState<MovieWithMeta[]>([])
+  const [warning, setWarning] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
+  const [shownMovieIds, setShownMovieIds] = useState<number[]>([])
+  const [isRefreshing, setIsRefreshing] = useState(false)
+  const [swappingIndex, setSwappingIndex] = useState<number | null>(null)
+  const [fadingInIndex, setFadingInIndex] = useState<number | null>(null)
+  const [noMoreMovies, setNoMoreMovies] = useState(false)
+  const [toast, setToast] = useState<string | null>(null)
+  const [reactions, setReactions] = useState<Record<number, 'like' | 'dislike'>>({})
 
   const currentQuestion = QUESTIONS[questionIndex]
   const isMulti = currentQuestion?.multi ?? false
+  const isGroupCtx = GROUP_CONTEXTS.has(answers.q1 ?? '')
+
+  function getQuestionText(q: typeof QUESTIONS[0]): string {
+    if (!isGroupCtx) return q.text
+    if (q.id === 'q3') return 'How much brain do you all want to use?'
+    if (q.id === 'q4') return 'Anything you all want to avoid?'
+    return q.text
+  }
+
+  const GROUP_Q3_LABELS: Record<string, string> = {
+    'Zero — just entertain me': 'Zero — just entertain us',
+    'Some — I like a good story': 'Some — we like a good story',
+    'Full — challenge me': 'Full — challenge us',
+  }
+
+  function getDisplayLabel(questionId: string, option: string): string {
+    if (isGroupCtx) {
+      if (questionId === 'q2') return GROUP_VIBE_LABELS[option] ?? option
+      if (questionId === 'q3') return GROUP_Q3_LABELS[option] ?? option
+      if (questionId === 'q4' && option === "Nothing — I'm open") return "Nothing — we're open"
+    }
+    return option
+  }
 
   function getAnswer(qid: string): string | string[] | undefined {
     return (answers as Record<string, string | string[]>)[qid]
@@ -241,6 +385,36 @@ export default function Home() {
     return val !== undefined && val !== ''
   }
 
+  async function enrichMovies(rawMovies: MovieWithMeta[]): Promise<MovieWithMeta[]> {
+    return Promise.all(
+      rawMovies.map(async (movie) => {
+        try {
+          const provRes = await fetch(`/api/watch-providers/${movie.tmdb_id}`)
+          if (provRes.ok) {
+            const provData = await provRes.json()
+            return {
+              ...movie,
+              availability: (provData.providers ?? []).map(
+                (p: { platform: string; type: string }) => ({
+                  id: 0,
+                  movie_id: movie.id,
+                  platform: p.platform,
+                  type: p.type,
+                  price: null,
+                  url: null,
+                  last_checked_at: new Date().toISOString(),
+                })
+              ),
+            }
+          }
+        } catch {
+          // ignore provider errors
+        }
+        return movie
+      })
+    )
+  }
+
   async function handleNext() {
     if (questionIndex < QUESTIONS.length - 1) {
       setQuestionIndex((i) => i + 1)
@@ -252,47 +426,88 @@ export default function Home() {
   async function submitQuiz() {
     setScreen('loading')
     setError(null)
+    setNoMoreMovies(false)
     try {
+      const seenIds = getSeenMovieIds()
       const res = await fetch('/api/recommend', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(answers),
+        body: JSON.stringify({ answers, excludedIds: seenIds, count: 3 }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Something went wrong')
 
-      // Fetch live watch providers for each result
-      const enriched: MovieWithMeta[] = await Promise.all(
-        (data.movies as MovieWithMeta[]).map(async (movie) => {
-          try {
-            const provRes = await fetch(`/api/watch-providers/${movie.tmdb_id}`)
-            if (provRes.ok) {
-              const provData = await provRes.json()
-              return {
-                ...movie,
-                availability: (provData.providers ?? []).map((p: { platform: string; type: string }) => ({
-                  id: 0,
-                  movie_id: movie.id,
-                  platform: p.platform,
-                  type: p.type,
-                  price: null,
-                  url: null,
-                  last_checked_at: new Date().toISOString(),
-                })),
-              }
-            }
-          } catch {
-            // ignore provider errors
-          }
-          return movie
-        })
-      )
-
+      const enriched = await enrichMovies(data.movies as MovieWithMeta[])
+      addSeenMovieIds(enriched.map((m) => m.id))
+      // Seed shownMovieIds with initial results so "different picks" always excludes them
+      setShownMovieIds(enriched.map((m) => m.id))
       setMovies(enriched)
+      setWarning(data.warning ?? null)
       setScreen('results')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong')
       setScreen('quiz')
+    }
+  }
+
+  async function handleDifferentPicks() {
+    setIsRefreshing(true)
+    setNoMoreMovies(false)
+    // Deduplicate: include all previously shown + all 3 current movies
+    const combined = [...shownMovieIds, ...movies.map((m) => m.id)]
+    const newExcluded = combined.filter((id, idx) => combined.indexOf(id) === idx)
+    setShownMovieIds(newExcluded)
+    try {
+      const res = await fetch('/api/recommend', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ answers, excludedIds: newExcluded, count: 3 }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Something went wrong')
+
+      if (!data.movies || data.movies.length === 0) {
+        setNoMoreMovies(true)
+        return
+      }
+
+      const enriched = await enrichMovies(data.movies as MovieWithMeta[])
+      addSeenMovieIds(enriched.map((m) => m.id))
+      setMovies(enriched)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Something went wrong')
+    } finally {
+      setIsRefreshing(false)
+    }
+  }
+
+  async function handleSwap(movieIndex: number) {
+    setSwappingIndex(movieIndex)
+    const outgoingId = movies[movieIndex].id
+    const allExcluded = [...shownMovieIds, ...movies.map((m) => m.id)]
+    try {
+      const res = await fetch('/api/recommend', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ answers, excludedIds: allExcluded, count: 1 }),
+      })
+      const data = await res.json()
+      if (!res.ok || !data.movies || data.movies.length === 0) return
+
+      const [enriched] = await enrichMovies(data.movies as MovieWithMeta[])
+      // Track the outgoing movie so it can never be returned in future swaps
+      setShownMovieIds((prev) => [...prev, outgoingId])
+      setMovies((prev) => {
+        const next = [...prev]
+        next[movieIndex] = enriched
+        return next
+      })
+      setFadingInIndex(movieIndex)
+      setTimeout(() => setFadingInIndex(null), 350)
+    } catch {
+      // silently ignore swap errors
+    } finally {
+      setSwappingIndex(null)
     }
   }
 
@@ -311,22 +526,90 @@ export default function Home() {
     setQuestionIndex(0)
     setAnswers({})
     setMovies([])
+    setWarning(null)
     setError(null)
+    setShownMovieIds([])
+    setNoMoreMovies(false)
+    setReactions({})
+  }
+
+  async function handleReact(movieId: number, r: 'like' | 'dislike') {
+    const current = reactions[movieId] ?? null
+    // Same button clicked again → undo; opposite → switch
+    const next = current === r ? null : r
+    setReactions((prev) => {
+      const updated = { ...prev }
+      if (next === null) delete updated[movieId]
+      else updated[movieId] = next
+      return updated
+    })
+    try {
+      await fetch('/api/movie-reaction', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ movie_id: movieId, reaction: next, session_id: getOrCreateSessionId() }),
+      })
+    } catch {
+      // non-critical; optimistic update stays
+    }
+  }
+
+  function showToast(msg: string) {
+    setToast(msg)
+    setTimeout(() => setToast(null), 2500)
+  }
+
+  async function handleClearHistory() {
+    clearSeenMovieIds()
+    setShownMovieIds([])
+    showToast('History cleared!')
+    await submitQuiz()
   }
 
   return (
     <div className="min-h-screen text-white flex flex-col" style={{ backgroundColor: '#0a0a0a' }}>
-      <div className="flex-1 flex flex-col items-center px-4 py-12">
-        <div className="w-full max-w-lg">
+      <div className="flex-1 flex flex-col items-center px-4 sm:px-6 py-12">
+        <div className="w-full max-w-lg min-w-0">
 
           {/* ── START ── */}
           {screen === 'start' && (
-            <div className="flex flex-col items-center text-center gap-8 pt-12">
+            <div className="flex flex-col items-center text-center gap-8 pt-12 w-full min-w-0">
               <div>
-                <h1 className="text-4xl font-extrabold tracking-tight bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
-                  RecommendMeMovies
+                <h1 className="text-2xl sm:text-4xl font-extrabold tracking-tight inline-flex items-center gap-2 flex-wrap justify-center">
+                  <span className="bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 bg-clip-text text-transparent whitespace-nowrap leading-none">
+                    RecommendMeMovies
+                  </span>
+                  <svg
+                    viewBox="2 5 28 28"
+                    className="w-5 h-5 sm:w-7 sm:h-7 flex-shrink-0"
+                    aria-hidden="true"
+                  >
+                    <defs>
+                      <linearGradient id="pc-bucket" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" stopColor="#8B5CF6" />
+                        <stop offset="100%" stopColor="#EC4899" />
+                      </linearGradient>
+                      <linearGradient id="pc-pop" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" stopColor="#DDD6FE" />
+                        <stop offset="100%" stopColor="#FBCFE8" />
+                      </linearGradient>
+                    </defs>
+                    {/* Popcorn kernels on top */}
+                    <ellipse cx="7" cy="15" rx="5" ry="4.5" fill="url(#pc-pop)" />
+                    <ellipse cx="25" cy="15" rx="5" ry="4.5" fill="url(#pc-pop)" />
+                    <ellipse cx="16" cy="11" rx="6" ry="5.5" fill="url(#pc-pop)" />
+                    <ellipse cx="11" cy="13" rx="4" ry="3.5" fill="url(#pc-pop)" />
+                    <ellipse cx="21" cy="13" rx="4" ry="3.5" fill="url(#pc-pop)" />
+                    {/* Bucket rim */}
+                    <rect x="3" y="17" width="26" height="4" rx="2" fill="url(#pc-bucket)" />
+                    {/* Bucket body */}
+                    <path d="M4 21 L28 21 L25 35 L7 35 Z" fill="url(#pc-bucket)" />
+                    {/* Bucket stripes */}
+                    <path d="M11 21 L10 35 L13 35 L14 21 Z" fill="rgba(255,255,255,0.18)" />
+                    <path d="M18 21 L17 35 L20 35 L21 21 Z" fill="rgba(255,255,255,0.18)" />
+                  </svg>
                 </h1>
-                <p className="text-gray-400 mt-3 text-base leading-relaxed">
+                <p className="text-gray-400 mt-3 text-sm sm:text-base leading-relaxed">
                   6 questions. 3 perfect movies.<br />
                   Zero scrolling through Netflix.
                 </p>
@@ -351,7 +634,7 @@ export default function Home() {
 
               <div>
                 <h2 className="text-xl font-bold text-white leading-snug">
-                  {currentQuestion.text}
+                  {getQuestionText(currentQuestion)}
                 </h2>
                 {isMulti && (
                   <p className="text-xs text-gray-500 mt-1">Select all that apply.</p>
@@ -368,7 +651,7 @@ export default function Home() {
                 {currentQuestion.options.map((option, i) => (
                   <QuizButton
                     key={option}
-                    label={option}
+                    label={getDisplayLabel(currentQuestion.id, option)}
                     selected={isOptionSelected(option)}
                     onClick={() => toggleOption(option)}
                     multi={isMulti}
@@ -412,13 +695,50 @@ export default function Home() {
                 <p className="text-gray-600 text-sm mt-1">Based on your answers</p>
               </div>
 
+              {warning && (
+                <div className="text-center text-yellow-400 text-sm bg-yellow-400/10 rounded-lg px-4 py-2">
+                  {warning}
+                </div>
+              )}
+
               <div className="flex flex-col gap-4">
                 {movies.map((movie, i) => (
-                  <MovieCard key={movie.id} movie={movie} index={i} />
+                  <MovieCard
+                    key={movie.id}
+                    movie={movie}
+                    index={i}
+                    onSwap={() => handleSwap(i)}
+                    isSwapping={swappingIndex === i}
+                    isFadingIn={fadingInIndex === i}
+                    reaction={reactions[movie.id] ?? null}
+                    onReact={(r) => handleReact(movie.id, r)}
+                  />
                 ))}
               </div>
 
               <div className="flex flex-col gap-3 mt-2">
+                {/* Show different picks button */}
+                {noMoreMovies ? (
+                  <p className="text-center text-sm text-gray-500 py-2">
+                    That&apos;s all the movies matching your vibe! Try different answers.
+                  </p>
+                ) : (
+                  <button
+                    onClick={handleDifferentPicks}
+                    disabled={isRefreshing}
+                    className="w-full py-3.5 rounded-xl border border-gray-800 text-gray-400 hover:border-indigo-500/50 hover:text-indigo-400 disabled:opacity-50 transition-all text-sm font-medium flex items-center justify-center gap-2"
+                  >
+                    {isRefreshing ? (
+                      <>
+                        <span className="inline-block w-4 h-4 border-2 border-gray-500 border-t-indigo-400 rounded-full animate-spin" />
+                        Finding different picks…
+                      </>
+                    ) : (
+                      <>🎲 Show me different picks</>
+                    )}
+                  </button>
+                )}
+
                 {/* Share button */}
                 <button
                   onClick={handleShare}
@@ -441,6 +761,15 @@ export default function Home() {
                   )}
                 </button>
 
+                {/* Clear watch history */}
+                <button
+                  onClick={handleClearHistory}
+                  disabled={isRefreshing}
+                  className="w-full py-3.5 rounded-xl border border-gray-800 text-gray-400 hover:border-indigo-500/50 hover:text-indigo-400 disabled:opacity-50 transition-all text-sm font-medium flex items-center justify-center gap-2"
+                >
+                  🧹 Clear watch history
+                </button>
+
                 {/* Restart button */}
                 <button
                   onClick={restart}
@@ -456,6 +785,15 @@ export default function Home() {
       </div>
 
       <Footer />
+
+      <FeedbackButton />
+
+      {/* Toast notification */}
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-gray-800 border border-gray-600 text-white text-sm px-5 py-2.5 rounded-full shadow-lg pointer-events-none">
+          {toast}
+        </div>
+      )}
     </div>
   )
 }

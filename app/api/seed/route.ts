@@ -307,15 +307,15 @@ export async function GET() {
           // Upsert in batches of 100; ignoreDuplicates skips existing tmdb_ids without error
           for (let i = 0; i < newMovies.length; i += 100) {
             const batch = newMovies.slice(i, i + 100).map(toDbRecord)
-            const { error, count } = await supabase
+            const { error, data } = await supabase
               .from('movies')
               .upsert(batch, { onConflict: 'tmdb_id', ignoreDuplicates: true })
-              .select('id', { count: 'exact', head: true })
+              .select('id')
             if (error) {
               totalErrors += batch.length
               log(`  DB error (batch ${i / 100 + 1}): ${error.message}`)
             } else {
-              totalInserted += count ?? batch.length
+              totalInserted += data?.length ?? batch.length
             }
           }
 

@@ -4,11 +4,24 @@ export const dynamic = 'force-dynamic'
 
 const INDIAN_LANGUAGES = ['hi', 'ta', 'te', 'pa', 'ml', 'kn', 'bn']
 
+interface MovieRow {
+  id: number
+  title: string
+  original_language: string | null
+  mood_tags: string[] | null
+  world_tags: string[] | null
+  energy_tags: string[] | null
+  ai_tagged: boolean | null
+  vote_count: number | null
+  year: number | null
+  genres: string[] | null
+}
+
 export async function GET() {
   const supabase = getSupabase()
 
   // Paginate all non-English films (Supabase default row limit is 1000)
-  const allMovies: Record<string, unknown>[] = []
+  const allMovies: MovieRow[] = []
   let offset = 0
   const PAGE = 1000
   while (true) {
@@ -20,7 +33,7 @@ export async function GET() {
       .range(offset, offset + PAGE - 1)
     if (error) return Response.json({ error: error.message }, { status: 500 })
     if (!data || data.length === 0) break
-    allMovies.push(...data)
+    allMovies.push(...(data as MovieRow[]))
     if (data.length < PAGE) break
     offset += PAGE
   }
